@@ -43,8 +43,8 @@
 
 ## Datasets
 - Synthetic and non-proprietary
-- High dimentionality
-- High heterogeniety
+- High dimensionality
+- High heterogeneity
 - High sparsity
 - Type changes over time
 - No. features changes over time
