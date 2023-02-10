@@ -1,0 +1,12 @@
+name: data_centric_preprocessing
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - numpy=1.24.0
+  - pandas=1.5.3
+  - scikit-learn=1.2.1
+  - matplotlib
+  - jupyterlab
+  - prefect=2.8.0
