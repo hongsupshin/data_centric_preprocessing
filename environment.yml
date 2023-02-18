@@ -10,3 +10,4 @@ dependencies:
   - matplotlib
   - jupyterlab
   - prefect=2.8.0
+  - pytest
