@@ -65,3 +65,106 @@ def build_preprocessor(
     preprocessor.set_params(column_transformers=column_transformers)
 
     return preprocessor
+
+
+def match_cols(
+    X: pd.DataFrame, cols_fit: Union[pd.Index, np.ndarray, list]
+) -> pd.DataFrame:
+    """Matches columns in DataFrame with expected columns.
+
+    Compares columns of X and cols_fit and
+    1. drop the columns that were not seen during fitting from X
+    2. add the columns that are missing in cols_fit back to X as missing
+
+    :param X: data to transform
+    :param cols_fit: columns that were seen during fitting
+    :return: data that has the same set of columns as cols_fit
+    """
+    if len(cols_fit) == 0:
+        log_and_raise(ValueError, "cols_fit is empty.")
+    X = drop_cols_not_seen(X, cols_fit)
+    X = add_missing_cols(X, cols_fit)
+    # match the column order as same as cols_fit
+    X = X[cols_fit]
+    return X
+
+
+def drop_cols_not_seen(
+    X: pd.DataFrame, cols_fit: Union[pd.Index, np.ndarray, list]
+) -> pd.DataFrame:
+    """Drop columns not in cols_fit.
+
+    :param X: DataFrame to transform
+    :param cols_fit: columns that were seen during fitting
+    :return: data with columns not in cols_fit dropped
+    :raises: ValueError: If all columns in X were never seen during fitting.
+    """
+    cols_not_seen = set(X.columns) - set(cols_fit)
+    # drop unseen columns
+    if cols_not_seen == set(X.columns):
+        log_and_raise(ValueError, "All columns in X were never seen during fitting.")
+
+    if len(cols_not_seen) > 0:
+        logger.warning(
+            f"Columns {sorted(list(cols_not_seen))} were dropped because they are not in X."
+        )
+        X = X.drop(list(cols_not_seen), axis=1)
+    return X
+
+
+def add_missing_cols(
+    X: pd.DataFrame, cols_fit: Union[pd.Index, np.ndarray, list]
+) -> pd.DataFrame:
+    """add the columns that are missing in cols_fit back to X as missing (nan values).
+
+    :param X: DataFrame to transform
+    :param cols_fit: columns that were seen during fitting
+    :return: data with missing columns added with Nans
+    """
+    cols_missing = set(cols_fit) - set(X.columns)
+    # add missing columns
+    if len(cols_missing) > 0:
+        logger.warning(
+            f"Columns {sorted(list(cols_missing))} were added back. These contain only nan values. "
+            f"These nan values will be handled by an imputer at a separate step."
+        )
+        X[list(cols_missing)] = np.ones((X.shape[0], len(cols_missing))) * np.nan
+    return X
+
+
+def replace_numpy_dtype_mismatch(
+    schema_train: pd.DataFrame,
+    schema_serve: pd.DataFrame,
+    X_serve: pd.DataFrame,
+) -> pd.DataFrame:
+    """Replace any numpy dtype mismatches between X_serve and schema_train with nulls
+
+    When these mismatches exist, trained models cannot digest X_serve.
+    This function resolves them by replacing the mismatched columns with nulls.
+
+    :param schema_train: training data schema
+    :param schema_serve: serving data schema
+    :param X_serve: serving dataframe which may have numpy dtype mismatch
+    :return: X_serve dataframe whose mismatched columns have nans
+    """
+    if set(schema_train.index) != set(X_serve.columns):
+        warnings.warn(
+            "Column-mismatch between schema_train and X_serve "
+            "resolved by match_cols()...",
+            UserWarning,
+        )
+        X_serve = match_cols(X_serve, schema_train.index)
+
+    cols_common = X_serve.columns.intersection(schema_serve.index)
+    cols_mismatch = cols_common[
+        schema_serve.loc[cols_common, "numpy_dtype"]
+        != schema_train.loc[cols_common, "numpy_dtype"]
+    ]
+
+    if len(cols_mismatch) > 0:
+        warnings.warn("Numpy dtype mismatches are replaced with nulls.", UserWarning)
+        null_dummies = pd.DataFrame(np.nan, index=X_serve.index, columns=cols_mismatch)
+        X_serve.drop(cols_mismatch, axis=1, inplace=True)
+        X_serve = pd.concat([X_serve, null_dummies], axis=1)
+
+    return X_serve[schema_train.index]
